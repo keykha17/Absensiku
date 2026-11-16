@@ -151,6 +151,20 @@ svg.chart{width:100%;height:auto;display:block}
 .paper table{table-layout:auto;width:100%;max-width:100%}
 .paper th{white-space:normal}
 @media (max-width:560px){.paper table th{width:auto!important;padding:5px 3px;font-size:10.5px}.paper table td{padding:5px 3px;font-size:12px}.paper{padding:18px 12px}.paper .idn{grid-template-columns:1fr}.paper .sign{grid-template-columns:1fr}.stat b{font-size:24px}}
+.sbar{display:flex;align-items:center;gap:10px;padding-block:8px;border-top:1px solid var(--line)}
+.sbar input{flex:1;min-width:0}
+.sbar small{white-space:nowrap}
+button.pill{border:0;cursor:pointer;font-family:var(--font)}
+button.pill:hover{filter:brightness(.95)}
+button.pill.sel{outline:2px solid currentColor;outline-offset:1px}
+.thb{appearance:none;border:0;background:none;font:inherit;font-weight:700;color:inherit;cursor:pointer;padding:2px 7px;border-radius:6px}
+.thb:hover{background:var(--accent-soft)}
+.thb.on{background:var(--accent);color:var(--accent-ink)}
+.lk{appearance:none;border:0;background:none;font:inherit;color:var(--accent);cursor:pointer;padding:0;text-align:left;font-weight:600}
+.lk:hover{text-decoration:underline}
+td.go{cursor:pointer}
+td.go:hover{background:var(--accent-soft)}
+mark.hl{background:var(--accent-soft);color:inherit;border-radius:3px;outline:1px solid var(--accent)}
 @page{size:A4;margin:14mm 14mm}
 @media print{
   header.top,nav.tabs,.noprint,.toast,body::before{display:none!important}
@@ -176,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="brand"><b id="brandname">Absensi Santri</b><span>Absensi, nilai, dan rapor</span></div>
   <span class="chip" id="semchip"></span>
 </div></header>
-<nav class="tabs"><div class="wrap" id="tabs"></div></nav>
+<nav class="tabs"><div class="wrap" id="tabs"></div><div class="wrap sbar" id="sbar"><input id="qfind" type="search" data-in="find" placeholder="Cari santri: nama, NIS, kamar, wali..." aria-label="Cari santri" autocomplete="off"><small id="qcnt" class="muted"></small><button class="btn sm" id="qclr" data-act="find-clear" hidden>Hapus</button></div></nav>
 <main class="wrap" id="main"></main>
 <div id="modal"></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -269,9 +283,9 @@ function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 var S=load()||demo();
 (function fix(){var d=defaultSet();for(var k in d){if(S.set[k]===undefined)S.set[k]=d[k];}if(!S.set.sesi||!S.set.sesi.length)S.set.sesi=['Sekolah'];if(!S.set.bobot)S.set.bobot=d.bobot;S.abs=S.abs||{};S.nilai=S.nilai||{};S.sikap=S.sikap||{};})();
 
-var ui={tab:'beranda',armed:null,
-  abs:{date:TODAY,kelas:'',sesi:''},rekap:{month:TODAY.slice(0,7),kelas:'',sesi:'*'},
-  nilai:{kelas:'',mapel:''},leger:{kelas:''},rapor:{kelas:'',santri:''},santri:{q:'',kelas:''},modal:null};
+var ui={tab:'beranda',armed:null,find:'',
+  abs:{date:TODAY,kelas:'',sesi:'',f:''},rekap:{month:TODAY.slice(0,7),kelas:'',sesi:'*',f:''},
+  nilai:{kelas:'',mapel:'',low:false},leger:{kelas:'',low:''},rapor:{kelas:'',santri:''},santri:{q:'',kelas:''},modal:null};
 
 /* ---------- domain ---------- */
 function kelasName(id){var k=S.kelas.find(function(x){return x.id===id;});return k?k.nama:'-';}
@@ -300,12 +314,36 @@ function hitung(sid,from,to,sesi){
 function pctFor(d){var a=0,n=0;for(var k in S.abs){if(k.indexOf(d+'|')===0){var e=S.abs[k];for(var id in e){n++;if(e[id].s==='H'||e[id].s==='T')a++;}}}return n?a/n*100:null;}
 function pctOf(c){var t=c.H+c.T+c.I+c.S+c.A;return t?Math.round((c.H+c.T)/t*100):null;}
 function pick(arr,v){return arr.some(function(x){return x.id===v;})?v:(arr[0]?arr[0].id:'');}
+function qOK(s){var q=(ui.find||'').toLowerCase().trim();if(!q)return true;return [s.nama,s.nis,s.kamar,s.wali].some(function(v){return String(v==null?'':v).toLowerCase().indexOf(q)>=0;});}
+function hl(t){t=String(t==null?'':t);var q=(ui.find||'').trim();if(!q)return esc(t);var i=t.toLowerCase().indexOf(q.toLowerCase());if(i<0)return esc(t);return esc(t.slice(0,i))+'<mark class="hl">'+esc(t.slice(i,i+q.length))+'</mark>'+esc(t.slice(i+q.length));}
+function syncKelas(){
+  if(!(ui.find||'').trim())return;
+  var ms=S.santri.filter(qOK);if(!ms.length)return;
+  ['abs','rekap','nilai','leger','rapor'].forEach(function(p){var cur=ui[p].kelas;if(!ms.some(function(s){return s.kelas===cur;}))ui[p].kelas=ms[0].kelas;});
+  if(ui.santri.kelas&&!ms.some(function(s){return s.kelas===ui.santri.kelas;}))ui.santri.kelas='';
+}
+function setFind(v){ui.find=v;var e=$('qfind');if(e)e.value=v;syncKelas();}
+function latestMonth(sid,st){var best='';for(var k in S.abs){var e=S.abs[k][sid];if(e&&(!st||e.s===st)){var d=k.split('|')[0];if(d>best)best=d;}}return best?best.slice(0,7):TODAY.slice(0,7);}
+function pillBtn(sid,st,label,n){return '<button class="pill '+st+'" data-act="goto-rekap" data-sid="'+sid+'" data-st="'+st+'" title="Lihat '+label+' di rekap bulanan">'+label+' '+n+'</button>';}
+function hasilCari(){
+  if(!(ui.find||'').trim())return '';
+  var ms=S.santri.filter(qOK).sort(function(a,b){return a.nama.localeCompare(b.nama);}),fr=semRange();
+  var h='<div class="card"><div class="head"><h3>Hasil pencarian</h3><small>'+ms.length+' santri cocok</small></div>';
+  if(!ms.length)return h+'<p class="empty">Tidak ada santri yang cocok dengan "'+esc(ui.find)+'".</p></div>';
+  h+='<div class="list">'+ms.slice(0,20).map(function(s){var c=hitung(s.id,fr[0],fr[1],'*'),a=rataSantri(s.id);
+    return '<div class="li"><div><button class="lk" data-act="goto-rapor" data-sid="'+s.id+'" title="Buka rapor">'+hl(s.nama)+'</button><div class="hint">'+esc(kelasName(s.kelas))+' &middot; NIS '+esc(s.nis)+' &middot; Nilai '+(a==null?'-':fmt(a))+'</div></div><div class="cnt">'+ORDER.map(function(k){return pillBtn(s.id,k,ST[k],c[k]);}).join('')+'</div></div>';}).join('')+'</div>'+(ms.length>20?'<p class="hint">Menampilkan 20 pertama. Persempit pencarian.</p>':'')+'</div>';
+  return h;
+}
+function rekapPills(D,u){
+  var t={H:0,T:0,I:0,S:0,A:0};D.all.forEach(function(r){ORDER.forEach(function(k){t[k]+=r.c[k];});});
+  return ORDER.map(function(k){return '<button class="pill '+k+(u.f===k?' sel':'')+'" data-act="rek-f" data-st="'+k+'" aria-pressed="'+(u.f===k)+'">'+ST[k]+' '+t[k]+'</button>';}).join('')+'<span class="hint">'+((u.f||(ui.find||'').trim())?'Menampilkan '+D.rows.length+' dari '+D.all.length+' santri':'Klik status untuk menampilkan santri terkait')+'</span>'+(u.f?'<button class="btn sm" data-act="rek-f" data-st="">Hapus filter</button>':'');
+}
 function ensureSel(){
   ui.abs.kelas=pick(S.kelas,ui.abs.kelas);if(S.set.sesi.indexOf(ui.abs.sesi)<0)ui.abs.sesi=S.set.sesi[0];
   ui.rekap.kelas=pick(S.kelas,ui.rekap.kelas);if(ui.rekap.sesi!=='*'&&S.set.sesi.indexOf(ui.rekap.sesi)<0)ui.rekap.sesi='*';
   ui.nilai.kelas=pick(S.kelas,ui.nilai.kelas);ui.nilai.mapel=pick(S.mapel,ui.nilai.mapel);
   ui.leger.kelas=pick(S.kelas,ui.leger.kelas);ui.rapor.kelas=pick(S.kelas,ui.rapor.kelas);
-  ui.rapor.santri=pick(santriOf(ui.rapor.kelas),ui.rapor.santri);
+  ui.rapor.santri=pick(santriOf(ui.rapor.kelas).filter(qOK),ui.rapor.santri);
   if(ui.santri.kelas&&!S.kelas.some(function(k){return k.id===ui.santri.kelas;}))ui.santri.kelas='';
 }
 function noKelas(){return '<div class="card empty">Belum ada kelas. Tambahkan kelas dan mata pelajaran dahulu di tab <b>Kelas &amp; Mapel</b>.<br><br><button class="btn pri" data-act="tab" data-id="kelas">Buka Kelas &amp; Mapel</button></div>';}
@@ -325,7 +363,7 @@ function pgBeranda(){
   var nS=S.santri.length,hp=pctFor(TODAY),ratas=S.santri.map(function(s){return rataSantri(s.id);}).filter(function(v){return v!=null;});
   var avg=ratas.length?ratas.reduce(function(a,b){return a+b;},0)/ratas.length:null;
   var remed=S.santri.filter(function(s){return S.mapel.some(function(m){var v=nilaiAkhir(S.nilai[nk(s.id,m.id)]);return v!=null&&v<m.kkm;});}).length;
-  var fr=semRange(),att=S.santri.map(function(s){var c=hitung(s.id,fr[0],fr[1],'*');return {s:s,c:c};}).filter(function(x){return x.c.A>0||x.c.T>2;}).sort(function(a,b){return b.c.A-a.c.A||b.c.T-a.c.T;}).slice(0,5);
+  var fr=semRange(),att=S.santri.map(function(s){var c=hitung(s.id,fr[0],fr[1],'*');return {s:s,c:c};}).filter(function(x){return (x.c.A>0||x.c.T>2)&&qOK(x.s);}).sort(function(a,b){return b.c.A-a.c.A||b.c.T-a.c.T;}).slice(0,5);
   var h='';
   if(S.demo)h+='<div class="banner"><div><b>Data contoh.</b> Semua isian di bawah hanya contoh agar Anda bisa mencoba. Hapus saat siap memakai data pesantren sendiri.</div><button class="btn danger'+(ui.armed==='clear-demo'?' armed':'')+'" data-act="clear-demo">'+(ui.armed==='clear-demo'?'Yakin, hapus semua':'Hapus data contoh')+'</button></div>';
   h+='<div class="grid g4">'
@@ -333,12 +371,12 @@ function pgBeranda(){
     +'<div class="card stat"><span>Kehadiran hari ini</span><b>'+(hp==null?'-':Math.round(hp)+'%')+'</b><small>'+(hp==null?'belum diisi':hari(TODAY)+', '+fmtTgl(TODAY))+'</small></div>'
     +'<div class="card stat"><span>Rata-rata nilai</span><b>'+(avg==null?'-':fmt(avg))+'</b><small>Semester '+esc(S.set.sem)+' '+esc(S.set.tahun)+'</small></div>'
     +'<div class="card stat"><span>Perlu remedial</span><b>'+remed+'</b><small>santri dengan nilai di bawah KKM</small></div></div>';
-  h+='<div class="grid g2"><div class="card"><div class="head"><h3>Kehadiran harian</h3><small>7 hari terakhir terisi</small></div>'+chartHadir()+'</div>';
+  h+=hasilCari();h+='<div class="grid g2"><div class="card"><div class="head"><h3>Kehadiran harian</h3><small>7 hari terakhir terisi</small></div>'+chartHadir()+'</div>';
   h+='<div class="card"><h3>Absensi hari ini</h3><div class="list">'+(S.kelas.length?S.kelas.map(function(k){
     var done=S.set.sesi.filter(function(se){var e=S.abs[TODAY+'|'+k.id+'|'+se];return e&&Object.keys(e).length;}).length,tot=S.set.sesi.length;
     return '<div class="li"><div style="flex:1"><b>'+esc(k.nama)+'</b><div class="hint">'+done+' dari '+tot+' sesi terisi</div><div class="prog"><i style="width:'+(done/tot*100)+'%"></i></div></div><button class="btn sm pri" data-act="goabs" data-k="'+k.id+'">Isi</button></div>';}).join(''):'<p class="empty">Belum ada kelas.</p>')+'</div></div></div>';
   h+='<div class="card"><div class="head"><h3>Perlu perhatian</h3><small>Alpa dan terlambat semester ini</small></div>'
-    +(att.length?'<div class="list">'+att.map(function(x){return '<div class="li"><div><b>'+esc(x.s.nama)+'</b><div class="hint">'+esc(kelasName(x.s.kelas))+'</div></div><div class="cnt"><span class="pill A">Alpa '+x.c.A+'</span><span class="pill T">Terlambat '+x.c.T+'</span></div></div>';}).join('')+'</div>':'<p class="empty">Tidak ada santri yang perlu diperhatikan.</p>')+'</div>';
+    +(att.length?'<div class="list">'+att.map(function(x){return '<div class="li"><div><b>'+hl(x.s.nama)+'</b><div class="hint">'+esc(kelasName(x.s.kelas))+'</div></div><div class="cnt">'+pillBtn(x.s.id,'A','Alpa',x.c.A)+pillBtn(x.s.id,'T','Terlambat',x.c.T)+'</div></div>';}).join('')+'</div>':'<p class="empty">Tidak ada santri yang perlu diperhatikan.</p>')+'</div>';
   return h;
 }
 
@@ -346,17 +384,17 @@ function pgBeranda(){
 function santriRows(){
   var u=ui.santri,l=S.santri.slice();
   if(u.kelas)l=l.filter(function(s){return s.kelas===u.kelas;});
-  if(u.q){var q=u.q.toLowerCase();l=l.filter(function(s){return s.nama.toLowerCase().indexOf(q)>=0||String(s.nis).indexOf(q)>=0;});}
+  l=l.filter(qOK);
   l.sort(function(a,b){return a.nama.localeCompare(b.nama);});
   if(!l.length)return '<p class="empty">'+(S.santri.length?'Tidak ada santri yang cocok.':'Belum ada santri. Klik Tambah santri untuk mulai.')+'</p>';
   return '<div class="tw"><table><thead><tr><th class="c">No</th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Kamar</th><th>Wali</th><th></th></tr></thead><tbody>'+l.map(function(s,i){
     var ar=ui.armed==='del-'+s.id;
-    return '<tr><td class="c">'+(i+1)+'</td><td>'+esc(s.nis)+'</td><td><b>'+esc(s.nama)+'</b><div class="hint">'+(s.jk==='P'?'Perempuan':'Laki-laki')+'</div></td><td>'+esc(kelasName(s.kelas))+'</td><td>'+esc(s.kamar||'-')+'</td><td>'+esc(s.wali||'-')+'<div class="hint">'+esc(s.hp||'')+'</div></td><td style="white-space:nowrap"><button class="btn sm" data-act="santri-edit" data-id="'+s.id+'">Ubah</button> <button class="btn sm danger'+(ar?' armed':'')+'" data-act="santri-del" data-id="'+s.id+'">'+(ar?'Yakin?':'Hapus')+'</button></td></tr>';}).join('')+'</tbody></table></div>';
+    return '<tr><td class="c">'+(i+1)+'</td><td>'+esc(s.nis)+'</td><td><button class="lk" data-act="goto-rapor" data-sid="'+s.id+'" title="Buka rapor">'+hl(s.nama)+'</button><div class="hint">'+(s.jk==='P'?'Perempuan':'Laki-laki')+'</div></td><td><button class="lk" data-act="santri-kelas" data-k="'+esc(s.kelas)+'" title="Saring kelas ini">'+esc(kelasName(s.kelas))+'</button></td><td>'+(s.kamar?'<button class="lk" data-act="santri-kamar" data-q="'+esc(s.kamar)+'" title="Cari semua santri di kamar ini">'+hl(s.kamar)+'</button>':'-')+'</td><td>'+esc(s.wali||'-')+'<div class="hint">'+esc(s.hp||'')+'</div></td><td style="white-space:nowrap"><button class="btn sm" data-act="santri-edit" data-id="'+s.id+'">Ubah</button> <button class="btn sm danger'+(ar?' armed':'')+'" data-act="santri-del" data-id="'+s.id+'">'+(ar?'Yakin?':'Hapus')+'</button></td></tr>';}).join('')+'</tbody></table></div>';
 }
 function pgSantri(){
   var u=ui.santri;
   return '<div class="card"><div class="head"><div><h2>Data santri</h2><small>'+S.santri.length+' santri terdaftar</small></div><div class="acts"><button class="btn" data-act="santri-bulk">Tambah banyak</button><button class="btn pri" data-act="santri-add">Tambah santri</button></div></div>'
-    +'<div class="bar" style="margin-top:14px"><div class="fld"><label for="sq">Cari nama atau NIS</label><input id="sq" type="search" data-in="sq" value="'+esc(u.q)+'" placeholder="Ketik nama..."></div><div class="fld"><label for="sk">Kelas</label>'+sel('id="sk" data-ch="ui" data-p="santri" data-k="kelas"',[['','Semua kelas']].concat(kelasOpts()),u.kelas)+'</div></div></div>'
+    +'<div class="bar" style="margin-top:14px"><div class="fld"><label for="sk">Kelas</label>'+sel('id="sk" data-ch="ui" data-p="santri" data-k="kelas"',[['','Semua kelas']].concat(kelasOpts()),u.kelas)+'</div></div></div>'
     +'<div class="card flat" id="slist">'+santriRows()+'</div>';
 }
 function modalSantri(s){
@@ -383,15 +421,16 @@ function pgAbsensi(){
   if(!S.kelas.length)return noKelas();
   var u=ui.abs,l=santriOf(u.kelas),key=u.date+'|'+u.kelas+'|'+u.sesi,rec=S.abs[key]||{},c={H:0,T:0,I:0,S:0,A:0,N:0};
   l.forEach(function(s){var e=rec[s.id];if(e)c[e.s]++;else c.N++;});
+  var tot=l.length;l=l.filter(function(s){if(!qOK(s))return false;if(!u.f)return true;var e=rec[s.id];return u.f==='N'?!e:!!(e&&e.s===u.f);});
   var h='<div class="card"><div class="head"><div><h2>Absensi harian</h2><small>'+hari(u.date)+', '+fmtTgl(u.date)+'</small></div><div class="acts"><button class="btn" data-act="abs-all">Semua hadir</button><button class="btn" data-act="abs-clear">Kosongkan</button></div></div>'
     +'<div class="bar" style="margin-top:14px"><div class="fld"><label>Tanggal</label><div style="display:flex;gap:6px"><button class="btn" data-act="abs-day" data-d="-1" aria-label="Hari sebelumnya">&lsaquo;</button><input id="a-date" type="date" data-ch="ui" data-p="abs" data-k="date" value="'+esc(u.date)+'"><button class="btn" data-act="abs-day" data-d="1" aria-label="Hari berikutnya">&rsaquo;</button></div></div>'
     +'<div class="fld"><label for="a-kelas">Kelas</label>'+sel('id="a-kelas" data-ch="ui" data-p="abs" data-k="kelas"',kelasOpts(),u.kelas)+'</div>'
     +'<div class="fld"><label for="a-sesi">Sesi</label>'+sel('id="a-sesi" data-ch="ui" data-p="abs" data-k="sesi"',S.set.sesi.map(function(x){return [x,x];}),u.sesi)+'</div></div>'
-    +'<div class="cnt" style="margin-top:14px">'+ORDER.map(function(k){return '<span class="pill '+k+'">'+ST[k]+' '+c[k]+'</span>';}).join('')+'<span class="pill N">Belum diisi '+c.N+'</span></div></div>';
+    +'<div class="cnt" style="margin-top:14px">'+ORDER.map(function(k){return '<button class="pill '+k+(u.f===k?' sel':'')+'" data-act="abs-f" data-st="'+k+'" aria-pressed="'+(u.f===k)+'">'+ST[k]+' '+c[k]+'</button>';}).join('')+'<button class="pill N'+(u.f==='N'?' sel':'')+'" data-act="abs-f" data-st="N" aria-pressed="'+(u.f==='N')+'">Belum diisi '+c.N+'</button>'+((u.f||(ui.find||'').trim())?'<span class="hint">Menampilkan '+l.length+' dari '+tot+' santri</span>':'<span class="hint">Klik status untuk menyaring</span>')+(u.f?'<button class="btn sm" data-act="abs-f" data-st="">Hapus filter</button>':'')+'</div></div>';
   h+='<div class="card flat">'+(l.length?l.map(function(s,i){
     var e=rec[s.id],cur=e?e.s:'';
-    return '<div class="arow"><div class="an"><b>'+(i+1)+'. '+esc(s.nama)+'</b><small>NIS '+esc(s.nis)+'</small></div><div class="seg" role="group" aria-label="Status '+esc(s.nama)+'">'+ORDER.map(function(k){return '<button class="st-'+k+(cur===k?' on':'')+'" data-act="abs-set" data-sid="'+s.id+'" data-st="'+k+'" title="'+ST[k]+'" aria-pressed="'+(cur===k)+'">'+k+'</button>';}).join('')+'</div>'
-      +(cur&&cur!=='H'?'<input class="ket" data-in="abs-ket" data-sid="'+s.id+'" placeholder="Keterangan" aria-label="Keterangan '+esc(s.nama)+'" value="'+esc(e.k||'')+'">':'')+'</div>';}).join(''):'<p class="empty">Belum ada santri di kelas ini.</p>')+'</div>';
+    return '<div class="arow"><div class="an"><b>'+(i+1)+'. '+hl(s.nama)+'</b><small>NIS '+esc(s.nis)+'</small></div><div class="seg" role="group" aria-label="Status '+esc(s.nama)+'">'+ORDER.map(function(k){return '<button class="st-'+k+(cur===k?' on':'')+'" data-act="abs-set" data-sid="'+s.id+'" data-st="'+k+'" title="'+ST[k]+'" aria-pressed="'+(cur===k)+'">'+k+'</button>';}).join('')+'</div>'
+      +(cur&&cur!=='H'?'<input class="ket" data-in="abs-ket" data-sid="'+s.id+'" placeholder="Keterangan" aria-label="Keterangan '+esc(s.nama)+'" value="'+esc(e.k||'')+'">':'')+'</div>';}).join(''):'<p class="empty">'+(tot?'Tidak ada santri yang cocok dengan pencarian atau filter.':'Belum ada santri di kelas ini.')+'</p>')+'</div>';
   h+='<div class="legend"><span><b>H</b> Hadir</span><span><b>T</b> Terlambat</span><span><b>I</b> Izin</span><span><b>S</b> Sakit</span><span><b>A</b> Alpa</span><span>Klik status yang sama sekali lagi untuk menghapus. Tersimpan otomatis.</span></div>';
   return h;
 }
@@ -406,7 +445,7 @@ function rekapData(){
     for(var d=1;d<=nd;d++){var ds=u.month+'-'+pad(d),w=null;(by[ds]||[]).forEach(function(e){var x=e[s.id];if(x){c[x.s]++;if(w==null||SEV[x.s]>SEV[w])w=x.s;}});days.push(w);}
     return {s:s,days:days,c:c,pct:pctOf(c)};
   });
-  return {nd:nd,rows:rows,y:p[0],m:p[1]};
+  var all=rows;rows=rows.filter(function(r){return qOK(r.s)&&(!u.f||r.c[u.f]>0);});return {nd:nd,rows:rows,all:all,y:p[0],m:p[1]};
 }
 function pgRekap(){
   if(!S.kelas.length)return noKelas();
@@ -414,10 +453,10 @@ function pgRekap(){
   var h='<div class="card"><div class="head"><div><h2>Rekap absensi bulanan</h2><small>'+MONTHS[D.m-1]+' '+D.y+'</small></div><button class="btn" data-act="rekap-copy">Salin tabel untuk Excel</button></div>'
     +'<div class="bar" style="margin-top:14px"><div class="fld"><label for="r-m">Bulan</label><input id="r-m" type="month" data-ch="ui" data-p="rekap" data-k="month" value="'+esc(u.month)+'"></div>'
     +'<div class="fld"><label for="r-k">Kelas</label>'+sel('id="r-k" data-ch="ui" data-p="rekap" data-k="kelas"',kelasOpts(),u.kelas)+'</div>'
-    +'<div class="fld"><label for="r-s">Sesi</label>'+sel('id="r-s" data-ch="ui" data-p="rekap" data-k="sesi"',[['*','Semua sesi (terburuk per hari)']].concat(S.set.sesi.map(function(x){return [x,x];})),u.sesi)+'</div></div></div>';
+    +'<div class="fld"><label for="r-s">Sesi</label>'+sel('id="r-s" data-ch="ui" data-p="rekap" data-k="sesi"',[['*','Semua sesi (terburuk per hari)']].concat(S.set.sesi.map(function(x){return [x,x];})),u.sesi)+'</div></div><div class="cnt" style="margin-top:14px">'+rekapPills(D,u)+'</div></div>';
   var th='';for(var d=1;d<=D.nd;d++)th+='<th class="c'+fri(d)+'">'+d+'</th>';
-  h+='<div class="card flat"><div class="tw"><table class="rk"><thead><tr><th class="sticky1" style="padding-left:10px">Nama</th>'+th+'<th class="c">H</th><th class="c">T</th><th class="c">I</th><th class="c">S</th><th class="c">A</th><th class="c">%</th></tr></thead><tbody>'
-    +(D.rows.length?D.rows.map(function(r){return '<tr><td class="nm sticky1">'+esc(r.s.nama)+'</td>'+r.days.map(function(x,i){return '<td class="c'+fri(i+1)+'">'+(x?'<span class="mk '+x+'">'+x+'</span>':'')+'</td>';}).join('')+'<td class="c">'+r.c.H+'</td><td class="c">'+r.c.T+'</td><td class="c">'+r.c.I+'</td><td class="c">'+r.c.S+'</td><td class="c'+(r.c.A?' low':'')+'">'+r.c.A+'</td><td class="c"><b>'+(r.pct==null?'-':r.pct+'%')+'</b></td></tr>';}).join(''):'<tr><td colspan="'+(D.nd+7)+'" class="empty">Belum ada santri.</td></tr>')+'</tbody></table></div></div>'
+  h+='<div class="card flat"><div class="tw"><table class="rk"><thead><tr><th class="sticky1" style="padding-left:10px">Nama</th>'+th+''+ORDER.map(function(k){return '<th class="c"><button class="thb'+(u.f===k?' on':'')+'" data-act="rek-f" data-st="'+k+'" title="Tampilkan santri dengan status '+ST[k]+'">'+k+'</button></th>';}).join('')+'<th class="c">%</th></tr></thead><tbody>'
+    +(D.rows.length?D.rows.map(function(r){return '<tr><td class="nm sticky1">'+hl(r.s.nama)+'</td>'+r.days.map(function(x,i){return '<td class="c'+fri(i+1)+(x?' go':'')+'"'+(x?' data-act="rek-go" data-sid="'+r.s.id+'" data-d="'+D.y+'-'+pad(D.m)+'-'+pad(i+1)+'" title="Buka di absensi"':'')+'>'+(x?'<span class="mk '+x+'">'+x+'</span>':'')+'</td>';}).join('')+'<td class="c">'+r.c.H+'</td><td class="c">'+r.c.T+'</td><td class="c">'+r.c.I+'</td><td class="c">'+r.c.S+'</td><td class="c'+(r.c.A?' low':'')+'">'+r.c.A+'</td><td class="c"><b>'+(r.pct==null?'-':r.pct+'%')+'</b></td></tr>';}).join(''):'<tr><td colspan="'+(D.nd+7)+'" class="empty">'+(D.all.length?'Tidak ada santri yang cocok dengan pencarian atau filter.':'Belum ada santri.')+'</td></tr>')+'</tbody></table></div></div>'
     +'<div class="legend"><span>Kolom bertanda abu-abu adalah hari Jumat.</span><span>Persentase = (Hadir + Terlambat) dibagi total sesi tercatat.</span></div>';
   return h;
 }
@@ -425,45 +464,46 @@ function pgRekap(){
 /* ---------- Nilai ---------- */
 function nilaiRow(s,i,m){
   var n=S.nilai[nk(s.id,m.id)]||{},v=nilaiAkhir(n),r=v==null?null:Math.round(v*10)/10;
-  return '<tr data-sid="'+s.id+'"><td class="c">'+(i+1)+'</td><td>'+esc(s.nama)+'</td>'+['tugas','uh','uts','uas'].map(function(f){return '<td class="c"><input class="num" type="number" inputmode="decimal" min="0" max="100" data-in="nilai" data-sid="'+s.id+'" data-mid="'+m.id+'" data-f="'+f+'" aria-label="'+f.toUpperCase()+' '+esc(s.nama)+'" value="'+(n[f]==null?'':n[f])+'"></td>';}).join('')+'<td class="c na'+(r!=null&&r<m.kkm?' low':'')+'">'+(r==null?'-':fmt(r))+'</td><td class="c np">'+predL(r)+'</td></tr>';
+  return '<tr data-sid="'+s.id+'"><td class="c">'+(i+1)+'</td><td>'+hl(s.nama)+'</td>'+['tugas','uh','uts','uas'].map(function(f){return '<td class="c"><input class="num" type="number" inputmode="decimal" min="0" max="100" data-in="nilai" data-sid="'+s.id+'" data-mid="'+m.id+'" data-f="'+f+'" aria-label="'+f.toUpperCase()+' '+esc(s.nama)+'" value="'+(n[f]==null?'':n[f])+'"></td>';}).join('')+'<td class="c na'+(r!=null&&r<m.kkm?' low':'')+'">'+(r==null?'-':fmt(r))+'</td><td class="c np">'+predL(r)+'</td></tr>';
 }
 function nilaiSummary(){
   var m=S.mapel.find(function(x){return x.id===ui.nilai.mapel;});if(!m)return '';
   var vs=santriOf(ui.nilai.kelas).map(function(s){return nilaiAkhir(S.nilai[nk(s.id,m.id)]);}).filter(function(v){return v!=null;});
   if(!vs.length)return '<span class="hint">Belum ada nilai terisi.</span>';
   var avg=vs.reduce(function(a,b){return a+b;},0)/vs.length,low=vs.filter(function(v){return v<m.kkm;}).length;
-  return '<span class="pill N">Rata-rata '+fmt(avg)+'</span><span class="pill H">Tertinggi '+fmt(Math.max.apply(null,vs))+'</span><span class="pill A">Terendah '+fmt(Math.min.apply(null,vs))+'</span><span class="pill '+(low?'A':'H')+'">Di bawah KKM '+low+'</span>';
+  return '<span class="pill N">Rata-rata '+fmt(avg)+'</span><span class="pill H">Tertinggi '+fmt(Math.max.apply(null,vs))+'</span><span class="pill A">Terendah '+fmt(Math.min.apply(null,vs))+'</span><button class="pill '+(low?'A':'H')+(ui.nilai.low?' sel':'')+'" data-act="nilai-low" aria-pressed="'+(!!ui.nilai.low)+'" title="Klik untuk menampilkan hanya santri di bawah KKM">Di bawah KKM '+low+'</button>';
 }
 function pgNilai(){
   if(!S.kelas.length||!S.mapel.length)return noKelas();
-  var u=ui.nilai,m=S.mapel.find(function(x){return x.id===u.mapel;}),l=santriOf(u.kelas),w=S.set.bobot;
+  var u=ui.nilai,m=S.mapel.find(function(x){return x.id===u.mapel;}),l0=santriOf(u.kelas),w=S.set.bobot,l=l0.filter(function(s){if(!qOK(s))return false;if(!u.low)return true;var v=nilaiAkhir(S.nilai[nk(s.id,m.id)]);return v!=null&&v<m.kkm;});
   return '<div class="card"><div class="head"><div><h2>Input nilai</h2><small>Semester '+esc(S.set.sem)+' '+esc(S.set.tahun)+' &middot; KKM '+m.kkm+'</small></div></div>'
     +'<div class="bar" style="margin-top:14px"><div class="fld"><label for="n-k">Kelas</label>'+sel('id="n-k" data-ch="ui" data-p="nilai" data-k="kelas"',kelasOpts(),u.kelas)+'</div>'
     +'<div class="fld"><label for="n-m">Mata pelajaran</label>'+sel('id="n-m" data-ch="ui" data-p="nilai" data-k="mapel"',S.mapel.map(function(x){return [x.id,x.nama];}),u.mapel)+'</div></div>'
     +'<div class="cnt" id="nsum" style="margin-top:14px">'+nilaiSummary()+'</div></div>'
     +'<div class="card flat"><div class="tw"><table><thead><tr><th class="c">No</th><th>Nama</th><th class="c">Tugas<br><small>'+w.tugas+'%</small></th><th class="c">UH<br><small>'+w.uh+'%</small></th><th class="c">UTS<br><small>'+w.uts+'%</small></th><th class="c">UAS<br><small>'+w.uas+'%</small></th><th class="c">Nilai akhir</th><th class="c">Predikat</th></tr></thead><tbody id="nbody">'
-    +(l.length?l.map(function(s,i){return nilaiRow(s,i,m);}).join(''):'<tr><td colspan="8" class="empty">Belum ada santri di kelas ini.</td></tr>')+'</tbody></table></div></div>'
+    +(l.length?l.map(function(s,i){return nilaiRow(s,i,m);}).join(''):'<tr><td colspan="8" class="empty">'+(l0.length?'Tidak ada santri yang cocok dengan pencarian atau filter.':'Belum ada santri di kelas ini.')+'</td></tr>')+'</tbody></table></div></div>'
     +'<div class="legend"><span>Isi nilai 0 sampai 100. Kolom kosong tidak dihitung, bobot sisanya disesuaikan otomatis.</span><span>A &ge; 90, B &ge; 80, C &ge; 70, D &ge; 60, E di bawah 60.</span></div>';
 }
 
 /* ---------- Leger ---------- */
 function legerData(){
   var l=santriOf(ui.leger.kelas),rk=ranking(ui.leger.kelas);
-  return {rk:rk,rows:l.map(function(s){return {s:s,v:S.mapel.map(function(m){var v=nilaiAkhir(S.nilai[nk(s.id,m.id)]);return v==null?null:Math.round(v*10)/10;}),tot:totalSantri(s.id),avg:rataSantri(s.id)};})};
+  var lo=ui.leger.low,n0=l.length;l=l.filter(function(s){if(!qOK(s))return false;if(!lo)return true;return S.mapel.some(function(m){var v=nilaiAkhir(S.nilai[nk(s.id,m.id)]);return v!=null&&v<m.kkm&&(lo==='*'||lo===m.id);});});
+  return {n0:n0,rk:rk,rows:l.map(function(s){return {s:s,v:S.mapel.map(function(m){var v=nilaiAkhir(S.nilai[nk(s.id,m.id)]);return v==null?null:Math.round(v*10)/10;}),tot:totalSantri(s.id),avg:rataSantri(s.id)};})};
 }
 function pgLeger(){
   if(!S.kelas.length||!S.mapel.length)return noKelas();
   var D=legerData();
   return '<div class="card"><div class="head"><div><h2>Leger nilai</h2><small>Semester '+esc(S.set.sem)+' '+esc(S.set.tahun)+'</small></div><button class="btn" data-act="leger-copy">Salin tabel untuk Excel</button></div>'
-    +'<div class="bar" style="margin-top:14px"><div class="fld"><label for="l-k">Kelas</label>'+sel('id="l-k" data-ch="ui" data-p="leger" data-k="kelas"',kelasOpts(),ui.leger.kelas)+'</div></div></div>'
-    +'<div class="card flat"><div class="tw"><table><thead><tr><th class="c">No</th><th class="sticky1">Nama</th>'+S.mapel.map(function(m){return '<th class="c" title="KKM '+m.kkm+'">'+esc(m.nama)+'</th>';}).join('')+'<th class="c">Jumlah</th><th class="c">Rata-rata</th><th class="c">Peringkat</th></tr></thead><tbody>'
-    +(D.rows.length?D.rows.map(function(r,i){return '<tr><td class="c">'+(i+1)+'</td><td class="sticky1" style="white-space:nowrap">'+esc(r.s.nama)+'</td>'+r.v.map(function(v,j){return '<td class="c'+(v!=null&&v<S.mapel[j].kkm?' low':'')+'">'+(v==null?'-':fmt(v))+'</td>';}).join('')+'<td class="c">'+fmt(r.tot)+'</td><td class="c"><b>'+(r.avg==null?'-':fmt(r.avg))+'</b></td><td class="c">'+(D.rk.map[r.s.id]?D.rk.map[r.s.id]+' / '+D.rk.n:'-')+'</td></tr>';}).join(''):'<tr><td colspan="'+(S.mapel.length+5)+'" class="empty">Belum ada santri.</td></tr>')+'</tbody></table></div></div>'
+    +'<div class="bar" style="margin-top:14px"><div class="fld"><label for="l-k">Kelas</label>'+sel('id="l-k" data-ch="ui" data-p="leger" data-k="kelas"',kelasOpts(),ui.leger.kelas)+'</div></div><div class="cnt" style="margin-top:14px"><button class="pill A'+(ui.leger.low==='*'?' sel':'')+'" data-act="leger-low" data-m="*">Ada nilai di bawah KKM</button>'+((ui.leger.low||(ui.find||'').trim())?'<span class="hint">Menampilkan '+D.rows.length+' dari '+D.n0+' santri</span>':'<span class="hint">Klik nama mata pelajaran untuk menyaring santri di bawah KKM mapel itu</span>')+'</div></div>'
+    +'<div class="card flat"><div class="tw"><table><thead><tr><th class="c">No</th><th class="sticky1">Nama</th>'+S.mapel.map(function(m){return '<th class="c" title="KKM '+m.kkm+'"><button class="thb'+(ui.leger.low===m.id?' on':'')+'" data-act="leger-low" data-m="'+m.id+'" title="Tampilkan santri di bawah KKM ('+m.kkm+') untuk '+esc(m.nama)+'">'+esc(m.nama)+'</button></th>';}).join('')+'<th class="c">Jumlah</th><th class="c">Rata-rata</th><th class="c">Peringkat</th></tr></thead><tbody>'
+    +(D.rows.length?D.rows.map(function(r,i){return '<tr><td class="c">'+(i+1)+'</td><td class="sticky1" style="white-space:nowrap">'+hl(r.s.nama)+'</td>'+r.v.map(function(v,j){return '<td class="c'+(v!=null&&v<S.mapel[j].kkm?' low':'')+'">'+(v==null?'-':fmt(v))+'</td>';}).join('')+'<td class="c">'+fmt(r.tot)+'</td><td class="c"><b>'+(r.avg==null?'-':fmt(r.avg))+'</b></td><td class="c">'+(D.rk.map[r.s.id]?D.rk.map[r.s.id]+' / '+D.rk.n:'-')+'</td></tr>';}).join(''):'<tr><td colspan="'+(S.mapel.length+5)+'" class="empty">'+(D.n0?'Tidak ada santri yang cocok dengan pencarian atau filter.':'Belum ada santri.')+'</td></tr>')+'</tbody></table></div></div>'
     +'<div class="legend"><span>Nilai merah berada di bawah KKM mata pelajaran tersebut.</span></div>';
 }
 
 /* ---------- Rapor ---------- */
 function raporHTML(s){
-  if(!s)return '<p class="empty">Pilih kelas yang memiliki santri.</p>';
+  if(!s)return '<p class="empty">Tidak ada santri yang cocok. Ubah pencarian atau pilih kelas lain.</p>';
   var kls=S.kelas.find(function(k){return k.id===s.kelas;})||{},fr=semRange(),c=hitung(s.id,fr[0],fr[1],S.set.sesiRapor),pct=pctOf(c),sp=S.sikap[sk(s.id)]||{},rk=ranking(s.kelas),avg=rataSantri(s.id);
   var rows=S.mapel.map(function(m,i){var v=nilaiAkhir(S.nilai[nk(s.id,m.id)]),r=v==null?null:Math.round(v*10)/10;
     return '<tr><td style="text-align:center">'+(i+1)+'</td><td>'+esc(m.nama)+'</td><td style="text-align:center">'+m.kkm+'</td><td style="text-align:center"><b>'+(r==null?'-':fmt(r))+'</b></td><td style="text-align:center">'+predFull(r)+'</td><td>'+(r==null?'-':r>=m.kkm?'Tuntas':'Belum tuntas')+'</td></tr>';}).join('');
@@ -483,7 +523,7 @@ function raporHTML(s){
 function curSantri(){return S.santri.find(function(s){return s.id===ui.rapor.santri;});}
 function pgRapor(){
   if(!S.kelas.length)return noKelas();
-  var u=ui.rapor,l=santriOf(u.kelas),s=curSantri(),sp=s?(S.sikap[sk(s.id)]||{}):{};
+  var u=ui.rapor,l=santriOf(u.kelas).filter(qOK),s=curSantri(),sp=s?(S.sikap[sk(s.id)]||{}):{};
   var h='<div class="card noprint"><div class="head"><div><h2>Rapor santri</h2><small>Semester '+esc(S.set.sem)+' '+esc(S.set.tahun)+'</small></div><button class="btn pri" data-act="rapor-print">Cetak rapor</button></div>'
     +'<div class="bar" style="margin-top:14px"><div class="fld"><label for="p-k">Kelas</label>'+sel('id="p-k" data-ch="ui" data-p="rapor" data-k="kelas"',kelasOpts(),u.kelas)+'</div>'
     +'<div class="fld"><label>Santri</label><div style="display:flex;gap:6px"><button class="btn" data-act="rapor-nav" data-d="-1" aria-label="Santri sebelumnya">&lsaquo;</button>'+sel('id="p-s" data-ch="ui" data-p="rapor" data-k="santri"',l.map(function(x){return [x.id,x.nama];}),u.santri)+'<button class="btn" data-act="rapor-nav" data-d="1" aria-label="Santri berikutnya">&rsaquo;</button></div></div>'
@@ -499,7 +539,7 @@ function pgRapor(){
 /* ---------- Kelas & Mapel ---------- */
 function pgKelas(){
   var k='<div class="card"><div class="head"><h2>Kelas</h2><button class="btn pri" data-act="kelas-add">Tambah kelas</button></div><div class="tw" style="margin-top:10px"><table><thead><tr><th>Nama kelas</th><th>Wali kelas</th><th>Santri</th><th></th></tr></thead><tbody>'
-    +(S.kelas.length?S.kelas.map(function(x){var ar=ui.armed==='dk-'+x.id;return '<tr><td><input data-ch="kelas" data-id="'+x.id+'" data-f="nama" value="'+esc(x.nama)+'" aria-label="Nama kelas"></td><td><input data-ch="kelas" data-id="'+x.id+'" data-f="wali" value="'+esc(x.wali)+'" aria-label="Wali kelas"></td><td class="c">'+santriOf(x.id).length+'</td><td><button class="btn sm danger'+(ar?' armed':'')+'" data-act="kelas-del" data-id="'+x.id+'">'+(ar?'Yakin?':'Hapus')+'</button></td></tr>';}).join(''):'<tr><td colspan="4" class="empty">Belum ada kelas.</td></tr>')+'</tbody></table></div></div>';
+    +(S.kelas.length?S.kelas.map(function(x){var ar=ui.armed==='dk-'+x.id;return '<tr><td><input data-ch="kelas" data-id="'+x.id+'" data-f="nama" value="'+esc(x.nama)+'" aria-label="Nama kelas"></td><td><input data-ch="kelas" data-id="'+x.id+'" data-f="wali" value="'+esc(x.wali)+'" aria-label="Wali kelas"></td><td class="c"><button class="lk" data-act="kelas-go" data-id="'+x.id+'" title="Lihat santri kelas ini">'+santriOf(x.id).length+'</button></td><td><button class="btn sm danger'+(ar?' armed':'')+'" data-act="kelas-del" data-id="'+x.id+'">'+(ar?'Yakin?':'Hapus')+'</button></td></tr>';}).join(''):'<tr><td colspan="4" class="empty">Belum ada kelas.</td></tr>')+'</tbody></table></div></div>';
   var m='<div class="card"><div class="head"><div><h2>Mata pelajaran</h2><small>KKM = nilai minimal ketuntasan</small></div><button class="btn pri" data-act="mapel-add">Tambah mapel</button></div><div class="tw" style="margin-top:10px"><table><thead><tr><th>Mata pelajaran</th><th>Pengajar</th><th class="c">KKM</th><th></th></tr></thead><tbody>'
     +(S.mapel.length?S.mapel.map(function(x){var ar=ui.armed==='dm-'+x.id;return '<tr><td><input data-ch="mapel" data-id="'+x.id+'" data-f="nama" value="'+esc(x.nama)+'" aria-label="Mata pelajaran"></td><td><input data-ch="mapel" data-id="'+x.id+'" data-f="pengajar" value="'+esc(x.pengajar)+'" aria-label="Pengajar"></td><td class="c"><input class="num" type="number" min="0" max="100" data-ch="mapel" data-id="'+x.id+'" data-f="kkm" value="'+x.kkm+'" aria-label="KKM"></td><td><button class="btn sm danger'+(ar?' armed':'')+'" data-act="mapel-del" data-id="'+x.id+'">'+(ar?'Yakin?':'Hapus')+'</button></td></tr>';}).join(''):'<tr><td colspan="4" class="empty">Belum ada mata pelajaran.</td></tr>')+'</tbody></table></div></div>';
   return '<div class="grid g2" style="align-items:start">'+k+m+'</div>';
@@ -527,6 +567,9 @@ function render(){
   ensureSel();
   $('tabs').innerHTML=TABS.map(function(t){return '<button class="tab'+(ui.tab===t[0]?' on':'')+'" data-act="tab" data-id="'+t[0]+'"'+(ui.tab===t[0]?' aria-current="page"':'')+'>'+esc(t[1])+'</button>';}).join('');
   $('main').innerHTML=pages[ui.tab]();
+  var sb=$('sbar'),qf=$('qfind'),has=!!(ui.find||'').trim();
+  sb.hidden=(ui.tab==='kelas'||ui.tab==='set');if(qf&&qf.value!==ui.find)qf.value=ui.find;
+  $('qclr').hidden=!has;$('qcnt').textContent=has?S.santri.filter(qOK).length+' santri cocok':'';
   $('semchip').textContent=S.set.sem+' '+S.set.tahun;
   $('brandname').textContent=S.set.pesantren||'Absensi Santri';
   $('modal').innerHTML=ui.modal||'';
@@ -540,6 +583,17 @@ function val(id){var e=$(id);return e?e.value.trim():'';}
 
 /* ---------- actions ---------- */
 var acts={
+  'find-clear':function(){setFind('');render();var e=$('qfind');if(e)e.focus();},
+  'abs-f':function(b){var st=b.dataset.st;ui.abs.f=(ui.abs.f===st)?'':st;render();},
+  'rek-f':function(b){var st=b.dataset.st;ui.rekap.f=(ui.rekap.f===st)?'':st;render();},
+  'rek-go':function(b){var s=S.santri.find(function(x){return x.id===b.dataset.sid;});if(!s)return;ui.abs.date=b.dataset.d;ui.abs.kelas=s.kelas;if(ui.rekap.sesi!=='*')ui.abs.sesi=ui.rekap.sesi;ui.abs.f='';setFind(s.nama);ui.tab='absensi';render();window.scrollTo(0,0);},
+  'nilai-low':function(){ui.nilai.low=!ui.nilai.low;render();},
+  'leger-low':function(b){ui.leger.low=(ui.leger.low===b.dataset.m)?'':b.dataset.m;render();},
+  'goto-rekap':function(b){var s=S.santri.find(function(x){return x.id===b.dataset.sid;});if(!s)return;var st=b.dataset.st;ui.rekap.kelas=s.kelas;ui.rekap.sesi='*';ui.rekap.f=st;ui.rekap.month=latestMonth(s.id,st);setFind(s.nama);ui.tab='rekap';render();window.scrollTo(0,0);},
+  'goto-rapor':function(b){var s=S.santri.find(function(x){return x.id===b.dataset.sid;});if(!s)return;ui.rapor.kelas=s.kelas;ui.rapor.santri=s.id;setFind(s.nama);ui.tab='rapor';render();window.scrollTo(0,0);},
+  'santri-kelas':function(b){ui.santri.kelas=(ui.santri.kelas===b.dataset.k)?'':b.dataset.k;render();},
+  'santri-kamar':function(b){setFind(b.dataset.q);render();},
+  'kelas-go':function(b){ui.santri.kelas=b.dataset.id;ui.tab='santri';render();window.scrollTo(0,0);},
   tab:function(b){ui.tab=b.dataset.id;ui.armed=null;render();window.scrollTo(0,0);var on=document.querySelector('.tab.on');if(on&&on.scrollIntoView)on.scrollIntoView({inline:'center',block:'nearest'});},
   goabs:function(b){ui.abs.kelas=b.dataset.k;ui.abs.date=TODAY;ui.tab='absensi';render();window.scrollTo(0,0);},
   'abs-set':function(b){
@@ -574,7 +628,7 @@ var acts={
   'kelas-del':function(b){var id=b.dataset.id;if(santriOf(id).length){toast('Pindahkan atau hapus santri di kelas ini dahulu');return;}arm('dk-'+id,function(){S.kelas=S.kelas.filter(function(k){return k.id!==id;});save();render();});},
   'mapel-add':function(){S.mapel.push({id:uid('m'),nama:'Mapel baru',pengajar:'',kkm:Number(S.set.kkm)||70});save();render();},
   'mapel-del':function(b){var id=b.dataset.id;arm('dm-'+id,function(){S.mapel=S.mapel.filter(function(m){return m.id!==id;});Object.keys(S.nilai).forEach(function(k){if(k.split('|')[3]===id)delete S.nilai[k];});save();render();});},
-  'rapor-nav':function(b){var l=santriOf(ui.rapor.kelas),i=l.findIndex(function(s){return s.id===ui.rapor.santri;})+Number(b.dataset.d);if(i>=0&&i<l.length){ui.rapor.santri=l[i].id;render();}},
+  'rapor-nav':function(b){var l=santriOf(ui.rapor.kelas).filter(qOK),i=l.findIndex(function(s){return s.id===ui.rapor.santri;})+Number(b.dataset.d);if(i>=0&&i<l.length){ui.rapor.santri=l[i].id;render();}},
   'rapor-print':function(){if(framed){toast('Cetak tidak bisa dari tampilan web ini. Pakai file HTML versi unduhan, buka di browser, lalu cetak.');return;}window.print();},
   'rekap-copy':function(){var D=rekapData(),t=['Nama'].concat(Array.apply(null,Array(D.nd)).map(function(_,i){return i+1;}),['H','T','I','S','A','%']).join('\t');
     D.rows.forEach(function(r){t+='\n'+[r.s.nama].concat(r.days.map(function(x){return x||'';}),[r.c.H,r.c.T,r.c.I,r.c.S,r.c.A,r.pct==null?'':r.pct]).join('\t');});copyText(t,'Tabel disalin. Tempel ke Excel atau Sheets.');},
@@ -589,6 +643,7 @@ var acts={
   'clear-demo':function(){arm('clear-demo',function(){S=blank();save();render();toast('Data contoh dihapus. Mulai dari tab Kelas & Mapel.');});}
 };
 var ins={
+  find:function(t){ui.find=t.value;syncKelas();render();},
   sq:function(t){ui.santri.q=t.value;$('slist').innerHTML=santriRows();},
   'abs-ket':function(t){var rec=S.abs[ui.abs.date+'|'+ui.abs.kelas+'|'+ui.abs.sesi];if(rec&&rec[t.dataset.sid]){rec[t.dataset.sid].k=t.value;save();}},
   nilai:function(t){
